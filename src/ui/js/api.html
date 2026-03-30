@@ -1,0 +1,46 @@
+<script>
+const Api = {
+  call(fnName, ...args) {
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject);
+      runner[fnName](...args);
+    });
+  },
+
+  // Spaces
+  getSpaces() { return this.call('getSpaces'); },
+  getSpace(spaceId) { return this.call('getSpace', spaceId); },
+  registerSpace(id, name, type, desc) { return this.call('registerSpace', id, name, type, desc); },
+  unregisterSpace(id) { return this.call('unregisterSpace', id); },
+
+  // Pages
+  getPageTree(folderId, depth) { return this.call('getPageTree', folderId, depth || 1); },
+  getPageMeta(fileId) { return this.call('getPageMeta', fileId); },
+
+  // Search
+  searchPages(query, spaceId) { return this.call('searchPages', query, spaceId); },
+
+  // Activity
+  getRecentActivity(spaceId, limit) { return this.call('getRecentActivity', spaceId, limit); },
+
+  // Tags
+  getTagsForFile(fileId) { return this.call('getTagsForFile', fileId); },
+  addTagToFile(fileId, tag) { return this.call('addTagToFile', fileId, tag); },
+  removeTagFromFile(fileId, tag) { return this.call('removeTagFromFile', fileId, tag); },
+  searchByTag(tag) { return this.call('searchByTag', tag); },
+  getAllTags() { return this.call('getAllTags'); },
+
+  // Favorites
+  getFavorites() { return this.call('getFavorites'); },
+  addFavorite(fileId) { return this.call('addFavorite', fileId); },
+  removeFavorite(fileId) { return this.call('removeFavorite', fileId); },
+
+  // Auth
+  getCurrentUser() { return this.call('getCurrentUser'); },
+
+  // Setup
+  setupSampleSpace() { return this.call('setupSampleSpace'); }
+};
+</script>

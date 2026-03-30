@@ -1,0 +1,215 @@
+<script>
+const App = {
+  state: {
+    user: null,
+    spaces: [],
+    currentRoute: null,
+  },
+
+  routes: {
+    'dashboard': (params) => Dashboard.render(params),
+    'space': (params) => SpaceView.render(params),
+    'search': (params) => Search.render(params),
+    'favorites': (params) => Favorites.render(params),
+    'tags': (params) => TagsView.render(params),
+    'page': (params) => PageDetail.render(params),
+  },
+
+  async init() {
+    window.addEventListener('hashchange', () => this.navigate());
+
+    // Global event delegation
+    document.addEventListener('click', (e) => this.handleAction(e));
+
+    // Search handler
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) {
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const q = searchInput.value.trim();
+          if (q) window.location.hash = '#search?q=' + encodeURIComponent(q);
+        }
+      });
+    }
+
+    // Load user info
+    try {
+      this.state.user = await Api.getCurrentUser();
+      this.renderUserInfo();
+    } catch (e) {}
+
+    // Load sidebar spaces
+    this.loadSidebar();
+
+    // Navigate to initial route
+    this.navigate();
+  },
+
+  parseHash() {
+    const hash = window.location.hash.slice(1) || 'dashboard';
+    const [pathPart, queryPart] = hash.split('?');
+    const segments = pathPart.split('/');
+    const route = segments[0];
+
+    const params = {};
+
+    // Parse path segments
+    if (segments.length > 1) {
+      params.id = decodeURIComponent(segments[1]);
+    }
+    if (segments.length > 2) {
+      params.sub = decodeURIComponent(segments[2]);
+    }
+    // For tags route: #tags/tagname
+    if (route === 'tags' && segments.length > 1) {
+      params.tag = decodeURIComponent(segments[1]);
+    }
+
+    // Parse query string
+    if (queryPart) {
+      const searchParams = new URLSearchParams(queryPart);
+      for (const [key, value] of searchParams) {
+        params[key] = value;
+      }
+    }
+
+    return [route, params];
+  },
+
+  navigate() {
+    const [route, params] = this.parseHash();
+    this.state.currentRoute = route;
+
+    const renderFn = this.routes[route] || this.routes['dashboard'];
+    renderFn(params);
+
+    // Update nav active state
+    document.querySelectorAll('.header-nav a').forEach(a => {
+      const href = a.getAttribute('href');
+      a.classList.toggle('active', href === '#' + route);
+    });
+  },
+
+  async handleAction(e) {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+
+    const action = target.dataset.action;
+    const id = target.dataset.id;
+
+    switch (action) {
+      case 'open-space':
+        e.preventDefault();
+        window.location.hash = '#space/' + id;
+        break;
+
+      case 'toggle-tree':
+      case 'expand-folder':
+        e.preventDefault();
+        SpaceView.toggleFolder(id);
+        break;
+
+      case 'toggle-star':
+        e.preventDefault();
+        await this.toggleStar(target, id);
+        break;
+
+      case 'setup-sample':
+        e.preventDefault();
+        target.disabled = true;
+        target.textContent = 'Creating...';
+        try {
+          await Api.setupSampleSpace();
+          await this.loadSidebar();
+          Dashboard.render();
+        } catch (err) {
+          alert('Error creating sample space: ' + err.message);
+          target.disabled = false;
+          target.textContent = 'Create Sample Space';
+        }
+        break;
+
+      case 'add-tag':
+        e.preventDefault();
+        const input = document.getElementById('new-tag-input');
+        if (input && input.value.trim()) {
+          try {
+            const tags = await Api.addTagToFile(id, input.value.trim());
+            input.value = '';
+            // Refresh the page detail
+            if (this.state.currentRoute === 'page') {
+              PageDetail.render({ id });
+            }
+          } catch (err) {
+            alert('Error adding tag: ' + err.message);
+          }
+        }
+        break;
+
+      case 'remove-tag':
+        e.preventDefault();
+        const tag = target.dataset.tag;
+        try {
+          await Api.removeTagFromFile(id, tag);
+          if (this.state.currentRoute === 'page') {
+            PageDetail.render({ id });
+          }
+        } catch (err) {
+          alert('Error removing tag: ' + err.message);
+        }
+        break;
+    }
+  },
+
+  async toggleStar(el, fileId) {
+    const isStarred = el.classList.contains('starred');
+    try {
+      if (isStarred) {
+        await Api.removeFavorite(fileId);
+        el.classList.remove('starred');
+        el.textContent = '\u2606';
+      } else {
+        await Api.addFavorite(fileId);
+        el.classList.add('starred');
+        el.textContent = '\u2605';
+      }
+    } catch (err) {
+      // silently fail
+    }
+  },
+
+  async loadSidebar() {
+    const sidebar = document.getElementById('sidebar-spaces');
+    if (!sidebar) return;
+
+    try {
+      this.state.spaces = await Api.getSpaces();
+      sidebar.innerHTML = this.state.spaces.map(s => `
+        <a class="sidebar-item" href="#space/${s.id}" data-space-id="${s.id}">
+          <span class="icon">\u{1F4DA}</span>
+          <span class="label">${Utils.escape(s.name)}</span>
+        </a>
+      `).join('') || '<div style="padding: 8px 20px; color: var(--text-light); font-size: 13px;">No spaces yet</div>';
+    } catch (e) {
+      sidebar.innerHTML = '<div style="padding: 8px 20px; color: var(--text-light);">Error loading spaces</div>';
+    }
+  },
+
+  updateSidebarActive(spaceId) {
+    document.querySelectorAll('#sidebar-spaces .sidebar-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.spaceId === spaceId);
+    });
+  },
+
+  renderUserInfo() {
+    const el = document.getElementById('user-info');
+    if (!el || !this.state.user) return;
+
+    const initials = this.state.user.name.slice(0, 2).toUpperCase();
+    el.innerHTML = `
+      <div class="user-avatar">${initials}</div>
+      <span>${Utils.escape(this.state.user.name)}</span>
+    `;
+  }
+};
+</script>

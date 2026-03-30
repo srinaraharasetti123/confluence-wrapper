@@ -1,0 +1,507 @@
+<script>
+// ============================================================
+// DASHBOARD
+// ============================================================
+const Dashboard = {
+  async render() {
+    const content = document.getElementById('app-content');
+    content.innerHTML = Utils.loading();
+
+    try {
+      const [spaces, recent] = await Promise.all([
+        Api.getSpaces(),
+        Api.getRecentActivity(null, 15)
+      ]);
+
+      let favs = [];
+      try { favs = await Api.getFavorites(); } catch(e) {}
+
+      content.innerHTML = this.template(spaces, recent, favs);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load dashboard', err.message || 'Something went wrong');
+    }
+  },
+
+  template(spaces, recent, favs) {
+    return `
+      <h1 style="margin-bottom: 24px;">Welcome to the Knowledge Base</h1>
+
+      ${spaces.length === 0 ? `
+        <div class="card">
+          <div class="empty-state">
+            <div class="icon">\u{1F4DA}</div>
+            <h3>No spaces configured yet</h3>
+            <p>Click the button below to create a sample space with demo content, or register an existing Google Drive folder as a space.</p>
+            <br>
+            <button class="btn btn-primary" data-action="setup-sample">Create Sample Space</button>
+          </div>
+        </div>
+      ` : `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Spaces</span>
+          </div>
+          <div class="spaces-grid">
+            ${spaces.map(s => `
+              <div class="space-card" data-action="open-space" data-id="${s.id}">
+                <div class="space-card-icon">\u{1F4DA}</div>
+                <div class="space-card-name">${Utils.escape(s.name)}</div>
+                <div class="space-card-desc">${Utils.escape(s.description)}</div>
+                <div class="space-card-meta">${s.docCount || 0} items</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `}
+
+      ${recent.length > 0 ? `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Recent Activity</span>
+          </div>
+          <ul class="activity-list">
+            ${recent.map(item => `
+              <li class="activity-item">
+                <div class="activity-icon">${Utils.getMimeIcon(item.mimeType)}</div>
+                <div class="activity-body">
+                  <div class="activity-title">
+                    <a href="${item.webViewLink}" target="_blank">${Utils.escape(item.name)}</a>
+                  </div>
+                  <div class="activity-meta">
+                    ${Utils.escape(item.modifiedBy)} \u00B7 ${Utils.formatDate(item.modifiedTime)}
+                  </div>
+                </div>
+                <button class="star-btn" data-action="toggle-star" data-id="${item.id}" title="Star this page">\u2606</button>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+
+      ${favs.length > 0 ? `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Starred</span>
+            <a class="card-link" href="#favorites">View all</a>
+          </div>
+          <ul class="activity-list">
+            ${favs.slice(0, 5).map(item => `
+              <li class="activity-item">
+                <div class="activity-icon">${Utils.getMimeIcon(item.mimeType)}</div>
+                <div class="activity-body">
+                  <div class="activity-title">
+                    <a href="${item.webViewLink}" target="_blank">${Utils.escape(item.name)}</a>
+                  </div>
+                  <div class="activity-meta">${Utils.formatDate(item.modifiedTime)}</div>
+                </div>
+                <button class="star-btn starred" data-action="toggle-star" data-id="${item.id}">\u2605</button>
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      ` : ''}
+    `;
+  }
+};
+
+// ============================================================
+// SPACE VIEW
+// ============================================================
+const SpaceView = {
+  currentSpaceId: null,
+
+  async render(params) {
+    const content = document.getElementById('app-content');
+    content.innerHTML = Utils.loading();
+    this.currentSpaceId = params.id;
+
+    try {
+      const space = await Api.getSpace(params.id);
+      content.innerHTML = this.template(space);
+      App.updateSidebarActive(params.id);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load space', err.message);
+    }
+  },
+
+  template(space) {
+    const tree = this.buildTree(space.items);
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        <span class="sep">/</span>
+        <span>${Utils.escape(space.name)}</span>
+      </div>
+
+      <div class="page-detail-header">
+        <h1>${Utils.escape(space.name)}</h1>
+      </div>
+      ${space.description ? `<p style="color: var(--text-secondary); margin-bottom: 20px;">${Utils.escape(space.description)}</p>` : ''}
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Pages</span>
+        </div>
+        ${tree.length > 0 ? `
+          <ul class="page-tree">
+            ${tree.map(node => this.treeNodeTemplate(node)).join('')}
+          </ul>
+        ` : Utils.emptyState('\u{1F4C2}', 'Empty space', 'No pages found in this space')}
+      </div>
+    `;
+  },
+
+  buildTree(flatNodes) {
+    if (!flatNodes || flatNodes.length === 0) return [];
+
+    const roots = [];
+    const parentId = flatNodes.length > 0 ? flatNodes[0].parentId : null;
+
+    for (const node of flatNodes) {
+      if (node.parentId === parentId) {
+        roots.push(node);
+      }
+    }
+
+    // Sort: folders first, then by name
+    roots.sort((a, b) => {
+      const aFolder = Utils.isFolder(a.mimeType) ? 0 : 1;
+      const bFolder = Utils.isFolder(b.mimeType) ? 0 : 1;
+      if (aFolder !== bFolder) return aFolder - bFolder;
+      return a.name.localeCompare(b.name);
+    });
+
+    return roots;
+  },
+
+  treeNodeTemplate(node) {
+    const isFolder = Utils.isFolder(node.mimeType);
+    const toggleClass = isFolder ? (node.hasChildren ? '' : 'empty') : 'empty';
+
+    return `
+      <li>
+        <div class="tree-item" data-id="${node.id}">
+          <span class="tree-toggle ${toggleClass}" data-action="toggle-tree" data-id="${node.id}">\u25B6</span>
+          <span class="tree-icon">${Utils.getMimeIcon(node.mimeType)}</span>
+          <span class="tree-name">
+            ${isFolder
+              ? `<a href="#" data-action="expand-folder" data-id="${node.id}">${Utils.escape(node.name)}</a>`
+              : `<a href="${node.webViewLink}" target="_blank">${Utils.escape(node.name)}</a>`
+            }
+          </span>
+          <span class="tree-meta">${Utils.formatDate(node.modifiedTime)}</span>
+          ${!isFolder ? `<button class="star-btn" data-action="toggle-star" data-id="${node.id}" title="Star">\u2606</button>` : ''}
+        </div>
+        <ul class="tree-children collapsed" id="children-${node.id}"></ul>
+      </li>
+    `;
+  },
+
+  async toggleFolder(folderId) {
+    const childrenEl = document.getElementById('children-' + folderId);
+    const toggleEl = document.querySelector(`[data-action="toggle-tree"][data-id="${folderId}"]`);
+
+    if (!childrenEl) return;
+
+    if (!childrenEl.classList.contains('collapsed')) {
+      childrenEl.classList.add('collapsed');
+      if (toggleEl) toggleEl.classList.remove('expanded');
+      return;
+    }
+
+    // Load children if empty
+    if (childrenEl.innerHTML.trim() === '') {
+      childrenEl.innerHTML = '<li style="padding: 8px; color: var(--text-light);">Loading...</li>';
+      childrenEl.classList.remove('collapsed');
+
+      try {
+        const children = await Api.getPageTree(folderId, 1);
+        children.sort((a, b) => {
+          const aFolder = Utils.isFolder(a.mimeType) ? 0 : 1;
+          const bFolder = Utils.isFolder(b.mimeType) ? 0 : 1;
+          if (aFolder !== bFolder) return aFolder - bFolder;
+          return a.name.localeCompare(b.name);
+        });
+
+        if (children.length === 0) {
+          childrenEl.innerHTML = '<li style="padding: 8px; color: var(--text-light);">Empty folder</li>';
+        } else {
+          childrenEl.innerHTML = children.map(n => SpaceView.treeNodeTemplate(n)).join('');
+        }
+      } catch (err) {
+        childrenEl.innerHTML = '<li style="padding: 8px; color: var(--danger);">Error loading</li>';
+      }
+    } else {
+      childrenEl.classList.remove('collapsed');
+    }
+
+    if (toggleEl) toggleEl.classList.add('expanded');
+  }
+};
+
+// ============================================================
+// SEARCH
+// ============================================================
+const Search = {
+  async render(params) {
+    const content = document.getElementById('app-content');
+    const query = params.q || '';
+
+    if (!query) {
+      content.innerHTML = Utils.emptyState('\u{1F50D}', 'Search the Knowledge Base', 'Type a search query in the header to find pages across all spaces');
+      return;
+    }
+
+    content.innerHTML = Utils.loading();
+
+    try {
+      const results = await Api.searchPages(query);
+      content.innerHTML = this.template(query, results);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Search failed', err.message);
+    }
+  },
+
+  template(query, results) {
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        <span class="sep">/</span>
+        <span>Search: "${Utils.escape(query)}"</span>
+      </div>
+
+      <h1 style="margin-bottom: 8px;">Search Results</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 20px;">${results.length} result${results.length !== 1 ? 's' : ''} for "${Utils.escape(query)}"</p>
+
+      ${results.length === 0
+        ? Utils.emptyState('\u{1F50D}', 'No results found', 'Try different keywords or check your search terms')
+        : `<div class="card">
+            ${results.map(r => `
+              <div class="search-result">
+                <div class="search-result-title">
+                  ${Utils.getMimeIcon(r.mimeType)}
+                  <a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>
+                </div>
+                ${r.breadcrumb && r.breadcrumb.length > 0 ? `
+                  <div class="search-result-breadcrumb">
+                    ${r.breadcrumb.map(b => Utils.escape(b.name)).join(' / ')}
+                  </div>
+                ` : ''}
+                <div class="search-result-meta">
+                  ${Utils.escape(r.modifiedBy)} \u00B7 ${Utils.formatDate(r.modifiedTime)} \u00B7 ${Utils.getMimeLabel(r.mimeType)}
+                </div>
+              </div>
+            `).join('')}
+          </div>`
+      }
+    `;
+  }
+};
+
+// ============================================================
+// FAVORITES
+// ============================================================
+const Favorites = {
+  async render() {
+    const content = document.getElementById('app-content');
+    content.innerHTML = Utils.loading();
+
+    try {
+      const favs = await Api.getFavorites();
+      content.innerHTML = this.template(favs);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load favorites', err.message);
+    }
+  },
+
+  template(favs) {
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        <span class="sep">/</span>
+        <span>Starred</span>
+      </div>
+
+      <h1 style="margin-bottom: 20px;">Starred Pages</h1>
+
+      ${favs.length === 0
+        ? Utils.emptyState('\u2B50', 'No starred pages', 'Star pages to quickly access them later')
+        : `<div class="card">
+            <ul class="activity-list">
+              ${favs.map(item => `
+                <li class="activity-item">
+                  <div class="activity-icon">${Utils.getMimeIcon(item.mimeType)}</div>
+                  <div class="activity-body">
+                    <div class="activity-title">
+                      <a href="${item.webViewLink}" target="_blank">${Utils.escape(item.name)}</a>
+                    </div>
+                    <div class="activity-meta">
+                      ${Utils.escape(item.modifiedBy)} \u00B7 ${Utils.formatDate(item.modifiedTime)}
+                    </div>
+                  </div>
+                  <button class="star-btn starred" data-action="toggle-star" data-id="${item.id}">\u2605</button>
+                </li>
+              `).join('')}
+            </ul>
+          </div>`
+      }
+    `;
+  }
+};
+
+// ============================================================
+// TAGS VIEW
+// ============================================================
+const TagsView = {
+  async render(params) {
+    const content = document.getElementById('app-content');
+    content.innerHTML = Utils.loading();
+
+    try {
+      if (params && params.tag) {
+        const results = await Api.searchByTag(params.tag);
+        content.innerHTML = this.tagResultsTemplate(params.tag, results);
+      } else {
+        const tags = await Api.getAllTags();
+        content.innerHTML = this.allTagsTemplate(tags);
+      }
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load tags', err.message);
+    }
+  },
+
+  allTagsTemplate(tags) {
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        <span class="sep">/</span>
+        <span>Tags</span>
+      </div>
+
+      <h1 style="margin-bottom: 20px;">Tags</h1>
+
+      ${tags.length === 0
+        ? Utils.emptyState('\u{1F3F7}', 'No tags yet', 'Add tags to pages to organize your knowledge base')
+        : `<div class="card">
+            <div class="tag-cloud">
+              ${tags.map(t => `
+                <a class="tag" href="#tags/${encodeURIComponent(t.tag)}">${Utils.escape(t.tag)} (${t.count})</a>
+              `).join('')}
+            </div>
+          </div>`
+      }
+    `;
+  },
+
+  tagResultsTemplate(tag, results) {
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        <span class="sep">/</span>
+        <a href="#tags">Tags</a>
+        <span class="sep">/</span>
+        <span>${Utils.escape(tag)}</span>
+      </div>
+
+      <h1 style="margin-bottom: 8px;">Tag: ${Utils.escape(tag)}</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 20px;">${results.length} page${results.length !== 1 ? 's' : ''}</p>
+
+      ${results.length === 0
+        ? Utils.emptyState('\u{1F3F7}', 'No pages with this tag', 'No pages are tagged with "' + tag + '"')
+        : `<div class="card">
+            ${results.map(r => `
+              <div class="search-result">
+                <div class="search-result-title">
+                  ${Utils.getMimeIcon(r.mimeType)}
+                  <a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>
+                </div>
+                <div class="search-result-meta">
+                  ${Utils.escape(r.modifiedBy)} \u00B7 ${Utils.formatDate(r.modifiedTime)}
+                </div>
+              </div>
+            `).join('')}
+          </div>`
+      }
+    `;
+  }
+};
+
+// ============================================================
+// PAGE DETAIL
+// ============================================================
+const PageDetail = {
+  async render(params) {
+    const content = document.getElementById('app-content');
+    content.innerHTML = Utils.loading();
+
+    try {
+      const page = await Api.getPageMeta(params.id);
+      content.innerHTML = this.template(page);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load page', err.message);
+    }
+  },
+
+  template(page) {
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        ${page.breadcrumb.map(b => `
+          <span class="sep">/</span>
+          <a href="#space/${b.id}">${Utils.escape(b.name)}</a>
+        `).join('')}
+        <span class="sep">/</span>
+        <span>${Utils.escape(page.name)}</span>
+      </div>
+
+      <div class="page-detail-header">
+        <h1>${Utils.escape(page.name)}</h1>
+        <button class="star-btn ${page.starred ? 'starred' : ''}" data-action="toggle-star" data-id="${page.id}">
+          ${page.starred ? '\u2605' : '\u2606'}
+        </button>
+      </div>
+
+      <div class="page-detail-meta">
+        <span>Last modified by ${Utils.escape(page.modifiedBy)}</span>
+        <span>${Utils.formatDate(page.modifiedTime)}</span>
+        <span>Created ${Utils.formatDate(page.createdTime)}</span>
+        <span>${Utils.getMimeLabel(page.mimeType)}</span>
+      </div>
+
+      <div class="page-detail-actions">
+        <a class="btn btn-primary" href="${page.webViewLink}" target="_blank">Open in Google ${Utils.getMimeLabel(page.mimeType)}</a>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Tags</span>
+        </div>
+        <div id="page-tags">
+          ${page.tags.length > 0
+            ? page.tags.map(t => `
+                <span class="tag">
+                  ${Utils.escape(t)}
+                  <span style="cursor:pointer; margin-left:4px;" data-action="remove-tag" data-id="${page.id}" data-tag="${Utils.escape(t)}">\u00D7</span>
+                </span>
+              `).join('')
+            : '<span style="color: var(--text-light);">No tags</span>'
+          }
+        </div>
+        <div class="tag-input-wrap">
+          <input type="text" id="new-tag-input" placeholder="Add a tag..." />
+          <button class="btn btn-secondary" data-action="add-tag" data-id="${page.id}">Add</button>
+        </div>
+      </div>
+
+      ${page.description ? `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Description</span>
+          </div>
+          <p>${Utils.escape(page.description)}</p>
+        </div>
+      ` : ''}
+    `;
+  }
+};
+</script>

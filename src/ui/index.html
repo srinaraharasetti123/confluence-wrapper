@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <?!= include('ui/css/styles') ?>
+</head>
+<body>
+  <div id="app">
+    <header id="app-header">
+      <a class="header-logo" href="#dashboard">Knowledge Base</a>
+
+      <nav class="header-nav">
+        <a href="#dashboard">Home</a>
+        <a href="#favorites">Starred</a>
+        <a href="#tags">Tags</a>
+      </nav>
+
+      <div class="header-search">
+        <input type="text" id="global-search" placeholder="Search pages..." autocomplete="off" />
+        <span class="search-icon">&#128269;</span>
+      </div>
+
+      <div class="header-spacer"></div>
+
+      <div class="header-user" id="user-info">
+        <div class="user-avatar">...</div>
+      </div>
+    </header>
+
+    <div id="app-body">
+      <nav id="app-sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-heading">Navigation</div>
+          <a class="sidebar-item" href="#dashboard">
+            <span class="icon">&#127968;</span>
+            <span class="label">Home</span>
+          </a>
+          <a class="sidebar-item" href="#favorites">
+            <span class="icon">&#11088;</span>
+            <span class="label">Starred</span>
+          </a>
+          <a class="sidebar-item" href="#tags">
+            <span class="icon">&#127991;</span>
+            <span class="label">Tags</span>
+          </a>
+        </div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-heading">Spaces</div>
+          <div id="sidebar-spaces">
+            <div style="padding: 8px 20px; color: var(--text-light); font-size: 13px;">Loading...</div>
+          </div>
+        </div>
+      </nav>
+
+      <main id="app-content">
+        <div class="loading">
+          <div class="spinner"></div>
+          Loading...
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <?!= include('ui/js/utils') ?>
+  <?!= include('ui/js/api') ?>
+  <?!= include('ui/js/components') ?>
+  <?!= include('ui/js/app') ?>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      App.init();
+    });
+  </script>
+</body>
+</html>
