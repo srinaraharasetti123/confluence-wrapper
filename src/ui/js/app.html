@@ -129,6 +129,11 @@ const App = {
         SpaceView.toggleFolder(id);
         break;
 
+      case 'cf-toggle':
+        e.preventDefault();
+        FolderView.toggleFolder(id);
+        break;
+
       case 'convert-to-space':
         e.preventDefault();
         target.disabled = true;

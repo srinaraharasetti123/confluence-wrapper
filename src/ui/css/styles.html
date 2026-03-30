@@ -732,9 +732,29 @@
     text-align: right;
   }
 
+  .cf-tree-toggle {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: var(--radius);
+    font-size: 10px;
+    color: var(--text-secondary);
+    transition: transform 0.15s;
+  }
+
+  .cf-tree-toggle:hover { background: rgba(9,30,66,0.08); }
+  .cf-tree-toggle.expanded { transform: rotate(90deg); }
+  .cf-tree-toggle.empty { visibility: hidden; cursor: default; }
+
   .cf-tree-children {
     position: relative;
   }
+
+  .cf-tree-children.collapsed { display: none; }
 
   .cf-tree-children::before {
     content: '';

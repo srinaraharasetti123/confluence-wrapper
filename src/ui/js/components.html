@@ -495,7 +495,7 @@ const TagsView = {
 };
 
 // ============================================================
-// FOLDER VIEW (Confluence-style)
+// FOLDER VIEW (Confluence-style, lazy-loading)
 // ============================================================
 const FolderView = {
   async render(params) {
@@ -503,21 +503,26 @@ const FolderView = {
     content.innerHTML = Utils.loading();
 
     try {
-      const [folder, tree] = await Promise.all([
+      const [folder, children] = await Promise.all([
         Api.getFolderInfo(params.id),
-        Api.getFullPageTree(params.id)
+        Api.getPageTree(params.id, 1)
       ]);
 
+      children.sort((a, b) => {
+        const af = Utils.isFolder(a.mimeType) ? 0 : 1;
+        const bf = Utils.isFolder(b.mimeType) ? 0 : 1;
+        if (af !== bf) return af - bf;
+        return a.name.localeCompare(b.name);
+      });
+
       const isSpace = App.state.spaces.some(s => s.id === params.id);
-      content.innerHTML = this.template(folder, tree, isSpace);
+      content.innerHTML = this.template(folder, children, isSpace);
     } catch (err) {
-      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load folder', err.message);
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load folder', String(err.message || err));
     }
   },
 
-  template(folder, flatNodes, isSpace) {
-    const nestedTree = this.buildNestedTree(flatNodes, folder.id);
-
+  template(folder, children, isSpace) {
     return `
       <div class="breadcrumb">
         <a href="#dashboard">Home</a>
@@ -550,78 +555,89 @@ const FolderView = {
       <div class="card cf-index-card">
         <div class="card-header">
           <span class="card-title">Page Index</span>
-          <span style="color: var(--text-light); font-size: 13px;">${flatNodes.length} item${flatNodes.length !== 1 ? 's' : ''}</span>
+          <span style="color: var(--text-light); font-size: 13px;">${children.length} item${children.length !== 1 ? 's' : ''}</span>
         </div>
-        ${nestedTree.length > 0 ? `
+        ${children.length > 0 ? `
           <div class="cf-tree">
-            ${this.renderTree(nestedTree, 0)}
+            ${children.map((node, index) => this.treeNodeHtml(node, 0, index === children.length - 1)).join('')}
           </div>
         ` : Utils.emptyState('\u{1F4C2}', 'Empty folder', 'No files found in this folder')}
       </div>
     `;
   },
 
-  buildNestedTree(flatNodes, rootId) {
-    if (!flatNodes || flatNodes.length === 0) return [];
+  treeNodeHtml(node, depth, isLast) {
+    const isFolder = Utils.isFolder(node.mimeType);
+    const hasChildren = isFolder && node.hasChildren;
 
-    const childrenMap = {};
-    for (const node of flatNodes) {
-      const pid = node.parentId;
-      if (!childrenMap[pid]) childrenMap[pid] = [];
-      childrenMap[pid].push(node);
-    }
-
-    // Sort each group: folders first, then alphabetically
-    for (const key in childrenMap) {
-      childrenMap[key].sort((a, b) => {
-        const af = Utils.isFolder(a.mimeType) ? 0 : 1;
-        const bf = Utils.isFolder(b.mimeType) ? 0 : 1;
-        if (af !== bf) return af - bf;
-        return a.name.localeCompare(b.name);
-      });
-    }
-
-    const buildNodes = (parentId) => {
-      const children = childrenMap[parentId] || [];
-      return children.map(node => ({
-        ...node,
-        children: Utils.isFolder(node.mimeType) ? buildNodes(node.id) : []
-      }));
-    };
-
-    return buildNodes(rootId);
+    return `
+      <div class="cf-tree-row ${depth === 0 ? 'cf-tree-root' : ''} ${isLast ? 'cf-tree-last' : ''}" style="--depth: ${depth}">
+        <div class="cf-tree-indent">
+          ${depth > 0 ? `<span class="cf-tree-connector ${isLast ? 'last' : ''}">${isLast ? '\u2514' : '\u251C'}</span>` : ''}
+        </div>
+        <div class="cf-tree-content">
+          ${isFolder
+            ? `<span class="cf-tree-toggle ${hasChildren ? '' : 'empty'}" data-action="cf-toggle" data-id="${node.id}">\u25B6</span>`
+            : `<span class="cf-tree-toggle empty"></span>`
+          }
+          <span class="cf-tree-icon">${Utils.getMimeIcon(node.mimeType)}</span>
+          <span class="cf-tree-name">
+            ${isFolder
+              ? `<a href="#folder/${node.id}">${Utils.escape(node.name)}</a>`
+              : `<a href="${node.webViewLink}" target="_blank">${Utils.escape(node.name)}</a>`
+            }
+          </span>
+          <span class="cf-tree-date">${Utils.formatDate(node.modifiedTime)}</span>
+          <span class="cf-tree-author">${Utils.escape(node.modifiedBy)}</span>
+        </div>
+      </div>
+      ${isFolder ? `<div class="cf-tree-children collapsed" id="cf-children-${node.id}" style="--depth: ${depth}"></div>` : ''}
+    `;
   },
 
-  renderTree(nodes, depth) {
-    if (!nodes || nodes.length === 0) return '';
+  async toggleFolder(folderId) {
+    const childrenEl = document.getElementById('cf-children-' + folderId);
+    const toggleEl = document.querySelector('[data-action="cf-toggle"][data-id="' + folderId + '"]');
+    if (!childrenEl) return;
 
-    return nodes.map((node, index) => {
-      const isFolder = Utils.isFolder(node.mimeType);
-      const isLast = index === nodes.length - 1;
-      const hasChildren = node.children && node.children.length > 0;
-      const indentClass = depth === 0 ? 'cf-tree-root' : '';
+    if (!childrenEl.classList.contains('collapsed')) {
+      childrenEl.classList.add('collapsed');
+      if (toggleEl) toggleEl.classList.remove('expanded');
+      return;
+    }
 
-      return `
-        <div class="cf-tree-row ${indentClass} ${isLast ? 'cf-tree-last' : ''}" style="--depth: ${depth}">
-          <div class="cf-tree-indent">
-            ${depth > 0 ? `<span class="cf-tree-connector ${isLast ? 'last' : ''}">${isLast ? '\u2514' : '\u251C'}</span>` : ''}
-          </div>
-          <div class="cf-tree-content">
-            <span class="cf-tree-icon">${Utils.getMimeIcon(node.mimeType)}</span>
-            <span class="cf-tree-name">
-              ${isFolder
-                ? `<a href="#folder/${node.id}">${Utils.escape(node.name)}</a>`
-                : `<a href="${node.webViewLink}" target="_blank">${Utils.escape(node.name)}</a>`
-              }
-            </span>
-            ${isFolder && hasChildren ? `<span class="cf-tree-count">${node.children.length} item${node.children.length !== 1 ? 's' : ''}</span>` : ''}
-            <span class="cf-tree-date">${Utils.formatDate(node.modifiedTime)}</span>
-            <span class="cf-tree-author">${Utils.escape(node.modifiedBy)}</span>
-          </div>
-        </div>
-        ${hasChildren ? `<div class="cf-tree-children" style="--depth: ${depth}">${this.renderTree(node.children, depth + 1)}</div>` : ''}
-      `;
-    }).join('');
+    // Load children if not yet loaded
+    if (childrenEl.innerHTML.trim() === '') {
+      childrenEl.innerHTML = '<div style="padding: 8px 16px; color: var(--text-light); font-size: 13px;">Loading...</div>';
+      childrenEl.classList.remove('collapsed');
+
+      try {
+        const children = await Api.getPageTree(folderId, 1);
+        children.sort((a, b) => {
+          const af = Utils.isFolder(a.mimeType) ? 0 : 1;
+          const bf = Utils.isFolder(b.mimeType) ? 0 : 1;
+          if (af !== bf) return af - bf;
+          return a.name.localeCompare(b.name);
+        });
+
+        const parentDepth = parseInt(childrenEl.style.getPropertyValue('--depth')) || 0;
+        const childDepth = parentDepth + 1;
+
+        if (children.length === 0) {
+          childrenEl.innerHTML = '<div style="padding: 6px 16px; color: var(--text-light); font-size: 13px;">Empty folder</div>';
+        } else {
+          childrenEl.innerHTML = children.map((node, i) =>
+            this.treeNodeHtml(node, childDepth, i === children.length - 1)
+          ).join('');
+        }
+      } catch (err) {
+        childrenEl.innerHTML = '<div style="padding: 6px 16px; color: var(--danger); font-size: 13px;">Error loading contents</div>';
+      }
+    } else {
+      childrenEl.classList.remove('collapsed');
+    }
+
+    if (toggleEl) toggleEl.classList.add('expanded');
   }
 };
 
