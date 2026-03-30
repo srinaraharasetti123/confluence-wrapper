@@ -15,7 +15,6 @@ function searchPages(query, spaceId) {
   do {
     var resp = Drive.Files.list({
       q: q,
-      orderBy: 'relevance',
       fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,lastModifyingUser,webViewLink,parents)',
       pageSize: Math.min(maxResults - results.length, 100),
       supportsAllDrives: true,
