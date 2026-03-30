@@ -118,6 +118,11 @@ const App = {
         window.location.hash = '#folder/' + id;
         break;
 
+      case 'search-filter':
+        e.preventDefault();
+        Search.applyFilter(target.dataset.filter);
+        break;
+
       case 'toggle-tree':
       case 'expand-folder':
         e.preventDefault();

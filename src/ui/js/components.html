@@ -247,9 +247,23 @@ const SpaceView = {
 // SEARCH
 // ============================================================
 const Search = {
+  lastResults: [],
+  activeFilter: 'all',
+
+  filterTypes: {
+    'all': { label: 'All', match: () => true },
+    'folder': { label: 'Folders', match: (m) => m === 'application/vnd.google-apps.folder' },
+    'document': { label: 'Docs', match: (m) => m === 'application/vnd.google-apps.document' },
+    'spreadsheet': { label: 'Sheets', match: (m) => m === 'application/vnd.google-apps.spreadsheet' },
+    'presentation': { label: 'Slides', match: (m) => m === 'application/vnd.google-apps.presentation' },
+    'pdf': { label: 'PDFs', match: (m) => m === 'application/pdf' },
+    'other': { label: 'Other', match: (m) => !['application/vnd.google-apps.folder','application/vnd.google-apps.document','application/vnd.google-apps.spreadsheet','application/vnd.google-apps.presentation','application/pdf'].includes(m) }
+  },
+
   async render(params) {
     const content = document.getElementById('app-content');
     const query = params.q || '';
+    this.activeFilter = 'all';
 
     if (!query) {
       content.innerHTML = Utils.emptyState('\u{1F50D}', 'Search the Knowledge Base', 'Type a search query in the header to find pages across all spaces');
@@ -259,14 +273,67 @@ const Search = {
     content.innerHTML = Utils.loading();
 
     try {
-      const results = await Api.searchPages(query);
-      content.innerHTML = this.template(query, results);
+      this.lastResults = await Api.searchPages(query);
+      content.innerHTML = this.template(query, this.lastResults);
     } catch (err) {
       content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Search failed', err.message);
     }
   },
 
+  applyFilter(filterKey) {
+    this.activeFilter = filterKey;
+    const filtered = this.lastResults.filter(r => this.filterTypes[filterKey].match(r.mimeType));
+
+    // Update filter buttons
+    document.querySelectorAll('.search-filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === filterKey);
+    });
+
+    // Update results list and count
+    const listEl = document.getElementById('search-results-list');
+    const countEl = document.getElementById('search-results-count');
+    if (countEl) countEl.textContent = filtered.length + ' result' + (filtered.length !== 1 ? 's' : '');
+    if (listEl) {
+      listEl.innerHTML = filtered.length === 0
+        ? Utils.emptyState('\u{1F50D}', 'No results for this type', 'Try a different filter')
+        : filtered.map(r => this.resultItem(r)).join('');
+    }
+  },
+
+  resultItem(r) {
+    return `
+      <div class="search-result">
+        <div class="search-result-title">
+          ${Utils.getMimeIcon(r.mimeType)}
+          ${Utils.isFolder(r.mimeType)
+            ? `<a href="#folder/${r.id}">${Utils.escape(r.name)}</a>`
+            : `<a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>`
+          }
+        </div>
+        ${r.breadcrumb && r.breadcrumb.length > 0 ? `
+          <div class="search-result-breadcrumb">
+            ${r.breadcrumb.map(b => Utils.escape(b.name)).join(' / ')}
+          </div>
+        ` : ''}
+        <div class="search-result-meta">
+          ${Utils.escape(r.modifiedBy)} \u00B7 ${Utils.formatDate(r.modifiedTime)} \u00B7 ${Utils.getMimeLabel(r.mimeType)}
+        </div>
+      </div>
+    `;
+  },
+
+  getFilterCounts(results) {
+    const counts = { all: results.length };
+    for (const key in this.filterTypes) {
+      if (key === 'all') continue;
+      counts[key] = results.filter(r => this.filterTypes[key].match(r.mimeType)).length;
+    }
+    return counts;
+  },
+
   template(query, results) {
+    const counts = this.getFilterCounts(results);
+
     return `
       <div class="breadcrumb">
         <a href="#dashboard">Home</a>
@@ -275,30 +342,24 @@ const Search = {
       </div>
 
       <h1 style="margin-bottom: 8px;">Search Results</h1>
-      <p style="color: var(--text-secondary); margin-bottom: 20px;">${results.length} result${results.length !== 1 ? 's' : ''} for "${Utils.escape(query)}"</p>
+      <p style="color: var(--text-secondary); margin-bottom: 16px;" id="search-results-count">${results.length} result${results.length !== 1 ? 's' : ''} for "${Utils.escape(query)}"</p>
+
+      ${results.length > 0 ? `
+        <div class="search-filters">
+          ${Object.entries(this.filterTypes).map(([key, ft]) =>
+            counts[key] > 0 || key === 'all'
+              ? `<button class="search-filter-btn ${key === 'all' ? 'active' : ''}" data-filter="${key}" data-action="search-filter">${ft.label} (${counts[key] || 0})</button>`
+              : ''
+          ).join('')}
+        </div>
+      ` : ''}
 
       ${results.length === 0
         ? Utils.emptyState('\u{1F50D}', 'No results found', 'Try different keywords or check your search terms')
         : `<div class="card">
-            ${results.map(r => `
-              <div class="search-result">
-                <div class="search-result-title">
-                  ${Utils.getMimeIcon(r.mimeType)}
-                  ${Utils.isFolder(r.mimeType)
-                    ? `<a href="#folder/${r.id}">${Utils.escape(r.name)}</a>`
-                    : `<a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>`
-                  }
-                </div>
-                ${r.breadcrumb && r.breadcrumb.length > 0 ? `
-                  <div class="search-result-breadcrumb">
-                    ${r.breadcrumb.map(b => Utils.escape(b.name)).join(' / ')}
-                  </div>
-                ` : ''}
-                <div class="search-result-meta">
-                  ${Utils.escape(r.modifiedBy)} \u00B7 ${Utils.formatDate(r.modifiedTime)} \u00B7 ${Utils.getMimeLabel(r.mimeType)}
-                </div>
-              </div>
-            `).join('')}
+            <div id="search-results-list">
+              ${results.map(r => this.resultItem(r)).join('')}
+            </div>
           </div>`
       }
     `;
