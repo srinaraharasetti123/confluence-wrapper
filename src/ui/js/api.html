@@ -18,6 +18,8 @@ const Api = {
   // Pages
   getPageTree(folderId, depth) { return this.call('getPageTree', folderId, depth || 1); },
   getPageMeta(fileId) { return this.call('getPageMeta', fileId); },
+  getFolderInfo(folderId) { return this.call('getFolderInfo', folderId); },
+  getFullPageTree(folderId) { return this.call('getFullPageTree', folderId); },
 
   // Search
   searchPages(query, spaceId) { return this.call('searchPages', query, spaceId); },

@@ -13,6 +13,7 @@ const App = {
     'favorites': (params) => Favorites.render(params),
     'tags': (params) => TagsView.render(params),
     'page': (params) => PageDetail.render(params),
+    'folder': (params) => FolderView.render(params),
   },
 
   async init() {
@@ -83,10 +84,19 @@ const App = {
     const renderFn = this.routes[route] || this.routes['dashboard'];
     renderFn(params);
 
-    // Update nav active state
+    // Update header nav active state
     document.querySelectorAll('.header-nav a').forEach(a => {
       const href = a.getAttribute('href');
       a.classList.toggle('active', href === '#' + route);
+    });
+
+    // Update sidebar active state for all items
+    const currentHash = window.location.hash || '#dashboard';
+    document.querySelectorAll('#app-sidebar .sidebar-item').forEach(el => {
+      const href = el.getAttribute('href');
+      if (href) {
+        el.classList.toggle('active', href === currentHash);
+      }
     });
   },
 
@@ -103,10 +113,30 @@ const App = {
         window.location.hash = '#space/' + id;
         break;
 
+      case 'open-folder':
+        e.preventDefault();
+        window.location.hash = '#folder/' + id;
+        break;
+
       case 'toggle-tree':
       case 'expand-folder':
         e.preventDefault();
         SpaceView.toggleFolder(id);
+        break;
+
+      case 'convert-to-space':
+        e.preventDefault();
+        target.disabled = true;
+        target.textContent = 'Converting...';
+        try {
+          await Api.registerSpace(id, target.dataset.name, 'folder', target.dataset.desc || '');
+          await this.loadSidebar();
+          window.location.hash = '#space/' + id;
+        } catch (err) {
+          alert('Error converting to space: ' + err.message);
+          target.disabled = false;
+          target.textContent = 'Convert to Space';
+        }
         break;
 
       case 'toggle-star':
@@ -196,9 +226,7 @@ const App = {
   },
 
   updateSidebarActive(spaceId) {
-    document.querySelectorAll('#sidebar-spaces .sidebar-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.spaceId === spaceId);
-    });
+    // Handled by navigate() now, kept for compatibility
   },
 
   renderUserInfo() {

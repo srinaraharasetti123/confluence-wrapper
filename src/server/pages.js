@@ -85,6 +85,32 @@ function getPageMeta(fileId) {
   };
 }
 
+function getFolderInfo(folderId) {
+  var file = Drive.Files.get(folderId, {
+    fields: 'id,name,description,modifiedTime,lastModifyingUser,createdTime,webViewLink,parents',
+    supportsAllDrives: true
+  });
+
+  var breadcrumb = buildBreadcrumb_(folderId);
+
+  return {
+    id: file.id,
+    name: file.name || 'Untitled',
+    description: file.description || '',
+    modifiedTime: file.modifiedTime || '',
+    modifiedBy: (file.lastModifyingUser && file.lastModifyingUser.displayName) || 'Unknown',
+    createdTime: file.createdTime || '',
+    webViewLink: file.webViewLink || '',
+    breadcrumb: breadcrumb
+  };
+}
+
+function getFullPageTree(folderId) {
+  var nodes = [];
+  fetchChildren_(folderId, 10, nodes);
+  return nodes;
+}
+
 function buildBreadcrumb_(fileId) {
   var crumbs = [];
   var currentId = fileId;

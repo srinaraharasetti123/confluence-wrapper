@@ -578,6 +578,143 @@
     margin-bottom: 20px;
   }
 
+  /* Folder meta */
+  .folder-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+
+  /* Confluence-style page tree */
+  .cf-index-card {
+    padding: 20px 24px;
+  }
+
+  .cf-tree {
+    border-top: 1px solid var(--border);
+    padding-top: 4px;
+  }
+
+  .cf-tree-row {
+    display: flex;
+    align-items: center;
+    padding: 0;
+    transition: background 0.1s;
+    border-radius: var(--radius);
+    margin: 0;
+  }
+
+  .cf-tree-row:hover {
+    background: rgba(9,30,66,0.04);
+  }
+
+  .cf-tree-indent {
+    flex-shrink: 0;
+    width: calc(var(--depth) * 28px);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 4px;
+  }
+
+  .cf-tree-connector {
+    color: var(--border);
+    font-family: monospace;
+    font-size: 14px;
+    line-height: 1;
+    user-select: none;
+  }
+
+  .cf-tree-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    min-width: 0;
+    border-bottom: 1px solid rgba(9,30,66,0.04);
+  }
+
+  .cf-tree-root > .cf-tree-content {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cf-tree-root:last-child > .cf-tree-content,
+  .cf-tree-last > .cf-tree-content {
+    border-bottom-color: transparent;
+  }
+
+  .cf-tree-icon {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+    font-size: 16px;
+  }
+
+  .cf-tree-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  .cf-tree-name a {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .cf-tree-name a:hover {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+
+  .cf-tree-count {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-light);
+    background: var(--sidebar-bg);
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+
+  .cf-tree-date {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-light);
+    width: 70px;
+    text-align: right;
+  }
+
+  .cf-tree-author {
+    flex-shrink: 0;
+    font-size: 12px;
+    color: var(--text-light);
+    width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .cf-tree-children {
+    position: relative;
+  }
+
+  .cf-tree-children::before {
+    content: '';
+    position: absolute;
+    left: calc(var(--depth) * 28px + 20px);
+    top: 0;
+    bottom: 12px;
+    width: 1px;
+    background: var(--border);
+  }
+
   /* Responsive */
   @media (max-width: 768px) {
     #app-sidebar { display: none; }

@@ -1,11 +1,11 @@
 function getRecentActivity(spaceId, limit) {
   var maxItems = limit || 20;
-  var q = "trashed = false and mimeType != 'application/vnd.google-apps.folder'";
+  var q = "trashed = false";
 
   if (spaceId) {
     var fileIds = getAllFileIdsInSpace_(spaceId);
     if (fileIds.length === 0) return [];
-    q = "'" + spaceId + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'";
+    q = "'" + spaceId + "' in parents and trashed = false";
   }
 
   var resp = Drive.Files.list({

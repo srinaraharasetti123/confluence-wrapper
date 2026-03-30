@@ -65,13 +65,17 @@ const Dashboard = {
                 <div class="activity-icon">${Utils.getMimeIcon(item.mimeType)}</div>
                 <div class="activity-body">
                   <div class="activity-title">
-                    <a href="${item.webViewLink}" target="_blank">${Utils.escape(item.name)}</a>
+                    ${Utils.isFolder(item.mimeType)
+                      ? `<a href="#folder/${item.id}">${Utils.escape(item.name)}</a>`
+                      : `<a href="${item.webViewLink}" target="_blank">${Utils.escape(item.name)}</a>`
+                    }
                   </div>
                   <div class="activity-meta">
                     ${Utils.escape(item.modifiedBy)} \u00B7 ${Utils.formatDate(item.modifiedTime)}
+                    ${Utils.isFolder(item.mimeType) ? ' \u00B7 Folder' : ''}
                   </div>
                 </div>
-                <button class="star-btn" data-action="toggle-star" data-id="${item.id}" title="Star this page">\u2606</button>
+                ${!Utils.isFolder(item.mimeType) ? `<button class="star-btn" data-action="toggle-star" data-id="${item.id}" title="Star this page">\u2606</button>` : ''}
               </li>
             `).join('')}
           </ul>
@@ -280,7 +284,10 @@ const Search = {
               <div class="search-result">
                 <div class="search-result-title">
                   ${Utils.getMimeIcon(r.mimeType)}
-                  <a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>
+                  ${Utils.isFolder(r.mimeType)
+                    ? `<a href="#folder/${r.id}">${Utils.escape(r.name)}</a>`
+                    : `<a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>`
+                  }
                 </div>
                 ${r.breadcrumb && r.breadcrumb.length > 0 ? `
                   <div class="search-result-breadcrumb">
@@ -423,6 +430,137 @@ const TagsView = {
           </div>`
       }
     `;
+  }
+};
+
+// ============================================================
+// FOLDER VIEW (Confluence-style)
+// ============================================================
+const FolderView = {
+  async render(params) {
+    const content = document.getElementById('app-content');
+    content.innerHTML = Utils.loading();
+
+    try {
+      const [folder, tree] = await Promise.all([
+        Api.getFolderInfo(params.id),
+        Api.getFullPageTree(params.id)
+      ]);
+
+      const isSpace = App.state.spaces.some(s => s.id === params.id);
+      content.innerHTML = this.template(folder, tree, isSpace);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load folder', err.message);
+    }
+  },
+
+  template(folder, flatNodes, isSpace) {
+    const nestedTree = this.buildNestedTree(flatNodes, folder.id);
+
+    return `
+      <div class="breadcrumb">
+        <a href="#dashboard">Home</a>
+        ${folder.breadcrumb.map(b => `
+          <span class="sep">/</span>
+          <a href="#folder/${b.id}">${Utils.escape(b.name)}</a>
+        `).join('')}
+        <span class="sep">/</span>
+        <span>${Utils.escape(folder.name)}</span>
+      </div>
+
+      <div class="page-detail-header">
+        <div>
+          <h1>\u{1F4C1} ${Utils.escape(folder.name)}</h1>
+          ${folder.description ? `<p style="color: var(--text-secondary); margin-top: 8px;">${Utils.escape(folder.description)}</p>` : ''}
+        </div>
+        ${isSpace
+          ? `<span class="btn btn-secondary" style="pointer-events:none; opacity:0.6;">\u2713 Space</span>`
+          : `<button class="btn btn-primary" data-action="convert-to-space" data-id="${folder.id}" data-name="${Utils.escape(folder.name)}" data-desc="${Utils.escape(folder.description)}">Convert to Space</button>`
+        }
+      </div>
+
+      <div class="folder-meta">
+        <span>Modified by ${Utils.escape(folder.modifiedBy)}</span>
+        <span>${Utils.formatDate(folder.modifiedTime)}</span>
+        <span>Created ${Utils.formatDate(folder.createdTime)}</span>
+        <a href="${folder.webViewLink}" target="_blank" style="color: var(--primary);">Open in Drive</a>
+      </div>
+
+      <div class="card cf-index-card">
+        <div class="card-header">
+          <span class="card-title">Page Index</span>
+          <span style="color: var(--text-light); font-size: 13px;">${flatNodes.length} item${flatNodes.length !== 1 ? 's' : ''}</span>
+        </div>
+        ${nestedTree.length > 0 ? `
+          <div class="cf-tree">
+            ${this.renderTree(nestedTree, 0)}
+          </div>
+        ` : Utils.emptyState('\u{1F4C2}', 'Empty folder', 'No files found in this folder')}
+      </div>
+    `;
+  },
+
+  buildNestedTree(flatNodes, rootId) {
+    if (!flatNodes || flatNodes.length === 0) return [];
+
+    const childrenMap = {};
+    for (const node of flatNodes) {
+      const pid = node.parentId;
+      if (!childrenMap[pid]) childrenMap[pid] = [];
+      childrenMap[pid].push(node);
+    }
+
+    // Sort each group: folders first, then alphabetically
+    for (const key in childrenMap) {
+      childrenMap[key].sort((a, b) => {
+        const af = Utils.isFolder(a.mimeType) ? 0 : 1;
+        const bf = Utils.isFolder(b.mimeType) ? 0 : 1;
+        if (af !== bf) return af - bf;
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    const buildNodes = (parentId) => {
+      const children = childrenMap[parentId] || [];
+      return children.map(node => ({
+        ...node,
+        children: Utils.isFolder(node.mimeType) ? buildNodes(node.id) : []
+      }));
+    };
+
+    return buildNodes(rootId);
+  },
+
+  renderTree(nodes, depth) {
+    if (!nodes || nodes.length === 0) return '';
+
+    return nodes.map((node, index) => {
+      const isFolder = Utils.isFolder(node.mimeType);
+      const isLast = index === nodes.length - 1;
+      const hasChildren = node.children && node.children.length > 0;
+      const indentClass = depth === 0 ? 'cf-tree-root' : '';
+
+      return `
+        <div class="cf-tree-row ${indentClass} ${isLast ? 'cf-tree-last' : ''}" style="--depth: ${depth}">
+          <div class="cf-tree-indent">
+            ${depth > 0 ? `<span class="cf-tree-connector ${isLast ? 'last' : ''}">${isLast ? '\u2514' : '\u251C'}</span>` : ''}
+          </div>
+          <div class="cf-tree-content">
+            <span class="cf-tree-icon">${Utils.getMimeIcon(node.mimeType)}</span>
+            <span class="cf-tree-name">
+              ${isFolder
+                ? `<a href="#folder/${node.id}">${Utils.escape(node.name)}</a>`
+                : `<a href="${node.webViewLink}" target="_blank">${Utils.escape(node.name)}</a>`
+              }
+            </span>
+            ${isFolder && hasChildren ? `<span class="cf-tree-count">${node.children.length} item${node.children.length !== 1 ? 's' : ''}</span>` : ''}
+            <span class="cf-tree-date">${Utils.formatDate(node.modifiedTime)}</span>
+            <span class="cf-tree-author">${Utils.escape(node.modifiedBy)}</span>
+          </div>
+        </div>
+        ${hasChildren ? `<div class="cf-tree-children" style="--depth: ${depth}">${this.renderTree(node.children, depth + 1)}</div>` : ''}
+      `;
+    }).join('');
   }
 };
 
