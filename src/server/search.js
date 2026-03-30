@@ -2,7 +2,7 @@ function searchPages(query, spaceId) {
   if (!query || query.trim().length === 0) return [];
 
   var sanitized = query.replace(/'/g, "\\'");
-  var q = "fullText contains '" + sanitized + "' and trashed = false";
+  var q = "(fullText contains '" + sanitized + "' or name contains '" + sanitized + "') and trashed = false";
 
   if (spaceId) {
     q = "'" + spaceId + "' in parents and " + q;
