@@ -66,7 +66,7 @@ const Dashboard = {
                 <div class="activity-body">
                   <div class="activity-title">
                     ${Utils.isFolder(item.mimeType)
-                      ? `<a href="#folder/${item.id}">${Utils.escape(item.name)}</a>`
+                      ? `<a href="#" data-action="open-folder" data-id="${item.id}">${Utils.escape(item.name)}</a>`
                       : `<a href="${item.webViewLink}" target="_blank">${Utils.escape(item.name)}</a>`
                     }
                   </div>
@@ -306,7 +306,7 @@ const Search = {
         <div class="search-result-title">
           ${Utils.getMimeIcon(r.mimeType)}
           ${Utils.isFolder(r.mimeType)
-            ? `<a href="#folder/${r.id}">${Utils.escape(r.name)}</a>`
+            ? `<a href="#" data-action="open-folder" data-id="${r.id}">${Utils.escape(r.name)}</a>`
             : `<a href="${r.webViewLink}" target="_blank">${Utils.escape(r.name)}</a>`
           }
         </div>
@@ -500,14 +500,30 @@ const TagsView = {
 const FolderView = {
   async render(params) {
     const content = document.getElementById('app-content');
+    if (!content) return;
     content.innerHTML = Utils.loading();
 
-    try {
-      const [folder, children] = await Promise.all([
-        Api.getFolderInfo(params.id),
-        Api.getPageTree(params.id, 1)
-      ]);
+    if (!params || !params.id) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'No folder specified', 'Missing folder ID in URL');
+      return;
+    }
 
+    var folder, children;
+    try {
+      folder = await Api.getFolderInfo(params.id);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Error loading folder info', String(err.message || err));
+      return;
+    }
+
+    try {
+      children = await Api.getPageTree(params.id, 1);
+    } catch (err) {
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Error loading folder contents', String(err.message || err));
+      return;
+    }
+
+    try {
       children.sort((a, b) => {
         const af = Utils.isFolder(a.mimeType) ? 0 : 1;
         const bf = Utils.isFolder(b.mimeType) ? 0 : 1;
@@ -518,7 +534,7 @@ const FolderView = {
       const isSpace = App.state.spaces.some(s => s.id === params.id);
       content.innerHTML = this.template(folder, children, isSpace);
     } catch (err) {
-      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Unable to load folder', String(err.message || err));
+      content.innerHTML = Utils.emptyState('\u{1F6A7}', 'Error rendering folder', String(err.message || err));
     }
   },
 
@@ -528,7 +544,7 @@ const FolderView = {
         <a href="#dashboard">Home</a>
         ${folder.breadcrumb.map(b => `
           <span class="sep">/</span>
-          <a href="#folder/${b.id}">${Utils.escape(b.name)}</a>
+          <a href="#" data-action="open-folder" data-id="${b.id}">${Utils.escape(b.name)}</a>
         `).join('')}
         <span class="sep">/</span>
         <span>${Utils.escape(folder.name)}</span>
@@ -583,7 +599,7 @@ const FolderView = {
           <span class="cf-tree-icon">${Utils.getMimeIcon(node.mimeType)}</span>
           <span class="cf-tree-name">
             ${isFolder
-              ? `<a href="#folder/${node.id}">${Utils.escape(node.name)}</a>`
+              ? `<a href="#" data-action="open-folder" data-id="${node.id}">${Utils.escape(node.name)}</a>`
               : `<a href="${node.webViewLink}" target="_blank">${Utils.escape(node.name)}</a>`
             }
           </span>
